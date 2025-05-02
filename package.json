@@ -1,0 +1,24 @@
+{
+  "name": "@adminforth/storage-adapter-local",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && npm version patch",
+    "rollout": "npm run build && npm publish --access public",
+    "prepare": "npm link adminforth"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devforth/adminforth-storage-adapter-local.git"
+  },
+  "dependencies": {
+    "adminforth": "^1.21.0",
+    "typescript": "^5.8.2"
+  }
+}
