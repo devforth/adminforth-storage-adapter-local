@@ -22,7 +22,6 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     this.options = options;
   }
 
-
   presignUrl(urlPath: string, expiresIn: number, payload: Record<string, string> = {}): string {
     const expires = Math.floor(Date.now() / 1000) + expiresIn;
 
@@ -43,7 +42,6 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
 
-
   /**
    * This method should return the presigned URL for the given key capable of upload (adapter user will call PUT multipart form data to this URL within expiresIn seconds after link generation).
    * By default file which will be uploaded on PUT should be marked for deletion. So if during 24h it is not marked for not deletion, it adapter should delete it forever.
@@ -62,12 +60,10 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     expiresIn = 3600
   ): Promise<{ uploadUrl: string; uploadExtraParams: Record<string, string> }> {
     const urlPath = `${this.expressBase}/${key}`;
-    console.log(`👐👐👐 get presigned signature for ${urlPath}|${expiresIn}|${JSON.stringify({ contentType })}`);
 
     return {
       uploadUrl: this.presignUrl(urlPath, expiresIn, { contentType }),
-      uploadExtraParams: {
-      }
+      uploadExtraParams: {}
     }
   }
 
@@ -151,7 +147,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       }
       console.log(`👐👐👐 verify sign for ${key}|${expires}|${JSON.stringify(payload)}`)
 
-      const expectedSignature = this.sign(key, expires, payload);
+      const expectedSignature = this.sign(
+        `${this.expressBase}/${key}`, expires, payload);
       if (signature !== expectedSignature) {
         return res.status(403).send("Invalid signature");
       }
