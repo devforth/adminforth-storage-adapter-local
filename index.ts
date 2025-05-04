@@ -12,7 +12,7 @@ declare global {
 
 interface StorageLocalFilesystemOptions {
   fileSystemFolder: string; // folder where files will be stored
-  mode: "public" | "private"; // public if all files should be accessible from the web, private only if could be accessed by temporary presigned links
+  mode?: "public" | "private"; // public if all files should be accessible from the web, private only if could be accessed by temporary presigned links
   signingSecret: string; // secret used to generate presigned URLs
   adminServeBaseUrl?: string; // base URL for serving files e.g. static/uploads. If not defined will be generated automatically
     // please note that is adminforth base URL is set, files will be available on `${adminforth.config.baseUrl}/${adminServeBaseUrl}/{key}`
@@ -30,6 +30,9 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
   constructor(options: StorageLocalFilesystemOptions) {
     this.options = options;
+    if (!this.options.mode) {
+      this.options.mode = "private";
+    }
   }
 
   presignUrl(urlPath: string, expiresIn: number, payload: Record<string, string> = {}): string {
