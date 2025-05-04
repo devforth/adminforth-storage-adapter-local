@@ -1,8 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
-import type { StorageAdapter, AdminForth } from "adminforth";
+import { StorageAdapter, AdminForth } from "adminforth";
 import crypto from "crypto";
 import { createWriteStream } from 'fs';
+import { Level } from 'level';
 
 declare global {
   var adminforth: AdminForth;
@@ -12,11 +13,19 @@ interface StorageLocalFilesystemOptions {
   fileSystemFolder: string; // folder where files will be stored
   mode: "public" | "private"; // public if all files should be accessible from the web, private only if could be accessed by temporary presigned links
   signingSecret: string; // secret used to generate presigned URLs
+  adminServeBaseUrl?: string; // base URL for serving files e.g. static/uploads. If not defined will be generated automatically
+    // please note that is adminforth base URL is set, files will be available on `${adminforth.config.baseUrl}/${adminServeBaseUrl}/{key}`
 }
 
 export default class AdminForthStorageAdapterLocalFilesystem implements StorageAdapter {
+  static registredPrexises: string[] = [];
+
   private options: StorageLocalFilesystemOptions;
   private expressBase: string;
+  private adminforthSlashedPrefix: string; // slashed prefix of the base URL
+
+  private metadataDb: Level;
+  private candidatesForDeletionDb: Level;
 
   constructor(options: StorageLocalFilesystemOptions) {
     this.options = options;
@@ -86,6 +95,28 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
   async markKeyForDeletation(key: string): Promise<void> {
+    const metadata = await this.metadataDb.get(key).catch((e) => {
+      console.error(`Could not read metadata from db: ${e}`);
+      throw new Error(`Could not read metadata from db: ${e}`);
+    });
+    if (!metadata) {
+      throw new Error(`Metadata for key ${key} not found`);
+    }
+    const metadataParsed = JSON.parse(metadata);
+
+    try {
+      await this.candidatesForDeletionDb.get(key);
+      // if key already exists, do nothing
+      return;
+    } catch (e) {
+      // if key does not exist, continue
+    }
+    try {
+      await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
+    } catch (e) {
+      console.error(`Could not write metadata to db: ${e}`);
+      throw new Error(`Could not write metadata to db: ${e}`);
+    }
   }
 
   /**
@@ -95,6 +126,12 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
    * @param key - The key of the file to be uploaded e.g. "uploads/file.txt"
    */
   async markKeyForNotDeletation(key: string): Promise<void> {
+    try {
+      // if key exists, delete it
+      await this.candidatesForDeletionDb.del(key);
+    } catch (e) {
+      // if key does not exist, do nothing
+    }
   }
 
   async setupLifecycle(userUniqueIntanceId): Promise<void> {
@@ -126,18 +163,48 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       throw new Error(`fileSystemFolder folder ${this.options.fileSystemFolder} is not readable: ${e}`);
     }
 
+    this.metadataDb = new Level(path.join(this.options.fileSystemFolder, userUniqueIntanceId, 'metadata'));
+
+    this.candidatesForDeletionDb = new Level(path.join(this.options.fileSystemFolder, userUniqueIntanceId, 'candidatesForDeletion'));
+
     const expressInstance = global.adminforth.express.expressApp;
     const prefix = global.adminforth.config.baseUrl || '/';
 
     const slashedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    this.adminforthSlashedPrefix = slashedPrefix;
+    if (!this.options.adminServeBaseUrl) {
+      this.expressBase = `${slashedPrefix}uploaded-static/${userUniqueIntanceId}`
+    } else {
+      if (AdminForthStorageAdapterLocalFilesystem.registredPrexises.includes(this.options.adminServeBaseUrl)) {
+        throw new Error(`adminServeBaseUrl ${this.options.adminServeBaseUrl} already registered, by another instance of local filesystem adapter. 
+          Each adapter instahce should have unique adminServeBaseUrl by design.
+        `);
+      }
 
-    this.expressBase = `${slashedPrefix}uploaded-static/${userUniqueIntanceId}`
+      AdminForthStorageAdapterLocalFilesystem.registredPrexises.push(this.expressBase);
+      this.expressBase = `${slashedPrefix}${this.options.adminServeBaseUrl}`;
+
+    }
+    
+
 
     // add express PUT endpoint for uploading files
     expressInstance.put(`${this.expressBase}/*`, async (req, res) => {
       const key = req.params[0];
-      const contentType = req.query.contentType as string;
-      const filePath = path.join(this.options.fileSystemFolder, key);
+
+      // get content type from headers
+      const contentType = req.headers["content-type"] as string;
+      if (!contentType) {
+        return res.status(400).send("Content type is required");
+      }
+
+      const filePath = path.resolve(this.options.fileSystemFolder, key);
+
+      // Ensure filePath is within fileSystemFolder
+      const basePath = path.resolve(this.options.fileSystemFolder);
+      if (!filePath.startsWith(basePath + path.sep)) {
+        return res.status(400).send("Invalid key, access denied");
+      }
 
       //verify presigned URL
       const expires = parseInt(req.query.expires as string);
@@ -178,13 +245,196 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       const writeStream = createWriteStream(filePath);
       req.pipe(writeStream);
       writeStream.on("finish", () => {
+        // write metadata to db
+        this.metadataDb.put(key, 
+          JSON.stringify({
+            contentType: contentType,
+            createdAt: +Date.now(),
+            size: writeStream.bytesWritten,
+          })
+        ).catch((e) => {
+          console.error(`Could not write metadata to db: ${e}`);
+          throw new Error(`Could not write metadata to db: ${e}`);
+        });
+
+        this.markKeyForDeletation(key);
+
         res.status(200).send("File uploaded");
       });
     });
+
+    console.log(`🎉🎉🎉 registring get endpoint for ${this.expressBase}/*`)
+    // add express GET endpoint for downloading files
+    expressInstance.get(`${this.expressBase}/*`, async (req, res) => {
+      console.log(`🎉🎉🎉 GET ${req.url}`, res, typeof res,  Object.keys(res));
+      const key = req.params[0];
+      const filePath = path.resolve(this.options.fileSystemFolder, key);
+
+      // Ensure filePath is within fileSystemFolder
+      const basePath = path.resolve(this.options.fileSystemFolder);
+      if (!filePath.startsWith(basePath + path.sep)) {
+        return res.status(400).send("Invalid key, access denied");
+      }
+
+      // check if file exists
+      try {
+        await fs.access(filePath);
+      } catch (e) {
+        return res.status(404).send("File not found");
+      }
+
+      // add metadata to response headers
+      const metadata = await this.metadataDb.get(key).catch((e) => {
+        throw new Error(`Could not read metadata for ${key} from db: ${e}`);
+      });
+      if (!metadata) {
+        return res.status(404).send(`Metadata for ${key} not found`);
+      }
+      const metadataParsed = JSON.parse(metadata);
+      // send file to client
+      res.sendFile(
+        filePath, 
+        {
+          headers: {
+            "Content-Type": metadataParsed.contentType,
+            "Content-Length": metadataParsed.size,
+            "Last-Modified": new Date(metadataParsed.createdAt).toUTCString(),
+            "ETag": crypto.createHash("md5").update(metadata).digest("hex"),
+          },
+        },
+        (err) => {
+          if (err) {
+            console.error(`Could not send file ${filePath}: ${err}`);
+            res.status(500).send("Could not send file");
+          }
+        }
+      );
+    });
+
+    this.putLastListenerToTheBeginningOfTheStack(expressInstance);
+
+
+
+    // add HEAD endpoint for returning file metadata
+    expressInstance.head(`${this.expressBase}/*`, async (req, res) => {
+      const key = req.params[0];
+      const filePath = path.resolve(this.options.fileSystemFolder, key);
+
+      // Ensure filePath is within fileSystemFolder
+      const basePath = path.resolve(this.options.fileSystemFolder);
+      if (!filePath.startsWith(basePath + path.sep)) {
+        return res.status(400).send("Invalid key, access denied");
+      }
+
+      // check if file exists
+      try {
+        await fs.access(filePath);
+      } catch (e) {
+        return res.status(404).send("File not found");
+      }
+
+      // add metadata to response headers
+      const metadata = await this.metadataDb.get(key).catch((e) => {
+        throw new Error(`Could not read metadata for ${key} from db: ${e}`);
+      });
+      if (!metadata) {
+        return res.status(404).send(`Metadata for ${key} not found`);
+      }
+      const metadataParsed = JSON.parse(metadata);
+      res.setHeader("Content-Type", metadataParsed.contentType);
+      res.setHeader("Content-Length", metadataParsed.size);
+      res.setHeader("Last-Modified", new Date(metadataParsed.createdAt).toUTCString());
+      res.setHeader("ETag", crypto.createHash("md5").update(metadata).digest("hex"));
+    });
+    this.putLastListenerToTheBeginningOfTheStack(expressInstance);
+
+
+    // run scheduler every 10 minutes to delete files marked for deletion
+    setInterval(async () => {
+      const now = +Date.now();
+      const keys = await this.candidatesForDeletionDb.keys().all();
+      for (const key of keys) {
+        const createdAt = await this.candidatesForDeletionDb.get(key).catch((e) => {
+          console.error(`Could not read metadata from db: ${e}`);
+          throw new Error(`Could not read metadata from db: ${e}`);
+        });
+        if (now - +createdAt > 24 * 60 * 60 * 1000) {
+          // delete file
+          try {
+            await fs.unlink(path.resolve(this.options.fileSystemFolder, key));
+          } catch (e) {
+            console.error(`Could not delete file ${key}: ${e}`);
+            throw new Error(`Could not delete file ${key}: ${e}`);
+          }
+          // delete metadata
+          try {
+            await this.metadataDb.del(key);
+          } catch (e) {
+            console.error(`Could not delete metadata from db: ${e}`);
+            throw new Error(`Could not delete metadata from db: ${e}`);
+          }
+        }
+      }
+    }
+      , 10 * 60 * 1000); // every 10 minutes
 
   }
 
   async objectCanBeAccesedPublicly(): Promise<boolean> {
     return this.options.mode === "public";
   }
+
+  putLastListenerToTheBeginningOfTheStack(expressInstance) {
+    // since adminforth might already registred /* endpoint we need to reorder the routes
+    const stack = expressInstance._router.stack;
+    const adpaterListnerLayer = stack.pop(); // route is last, just pop it
+    // find route with ${this.adminforthSlashedPrefix}assets/*
+    const wildcardIndex = stack.findIndex((layer) => {
+      return layer.route && layer.route.path === `${this.adminforthSlashedPrefix}assets/*`;
+    });
+    if (wildcardIndex === -1) {
+      // if not found, just push it to the end, e.g. if discover databse and this method executed before 
+      // adminforth registered the wildcard route
+      stack.push(adpaterListnerLayer);
+    } else {
+      stack.splice(wildcardIndex, 0, adpaterListnerLayer); // insert before wildcard
+    }
+  }
+
+  /**
+   * This method should return the key as a data URL (base64 encoded string).
+   * @param key - The key of the file to be converted to a data URL
+   * @returns A promise that resolves to a string containing the data URL
+   */
+   async getKeyAsDataURL(key: string): Promise<string> {
+    const filePath = path.resolve(this.options.fileSystemFolder, key);
+
+    // Ensure filePath is within fileSystemFolder
+    const basePath = path.resolve(this.options.fileSystemFolder);
+    if (!filePath.startsWith(basePath + path.sep)) {
+      throw new Error("Invalid key, access denied");
+    }
+
+    // check if file exists
+    try {
+      await fs.access(filePath);
+    } catch (e) {
+      throw new Error("File not found");
+    }
+
+    // read file and convert to base64
+    const fileBuffer = await fs.readFile(filePath);
+    const base64 = fileBuffer.toString("base64");
+    const metadata = await this.metadataDb.get(key).catch((e) => {
+      console.error(`Could not read metadata from db: ${e}`);
+      throw new Error(`Could not read metadata from db: ${e}`);
+    });
+    if (!metadata) {
+      throw new Error(`Metadata for key ${key} not found`);
+    }
+    const metadataParsed = JSON.parse(metadata);
+    const dataUrl = `data:${metadataParsed.contentType};base64,${base64}`;
+    return dataUrl;
+  }
+
 }
