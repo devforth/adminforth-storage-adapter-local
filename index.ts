@@ -1,9 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
-import { StorageAdapter, AdminForth } from "adminforth";
+import AdminForth, { StorageAdapter } from "adminforth";
 import crypto from "crypto";
 import { createWriteStream } from 'fs';
 import { Level } from 'level';
+import { Express } from "express";
 
 declare global {
   var adminforth: AdminForth;
@@ -167,7 +168,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
     this.candidatesForDeletionDb = new Level(path.join(this.options.fileSystemFolder, userUniqueIntanceId, 'candidatesForDeletion'));
 
-    const expressInstance = global.adminforth.express.expressApp;
+    const expressInstance: Express = global.adminforth.express.expressApp;
     const prefix = global.adminforth.config.baseUrl || '/';
 
     const slashedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
@@ -187,9 +188,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     }
     
 
-
     // add express PUT endpoint for uploading files
-    expressInstance.put(`${this.expressBase}/*`, async (req, res) => {
+    expressInstance.put(`${this.expressBase}/*`, async (req: any, res: any) => {
       const key = req.params[0];
 
       // get content type from headers
@@ -265,7 +265,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
     console.log(`🎉🎉🎉 registring get endpoint for ${this.expressBase}/*`)
     // add express GET endpoint for downloading files
-    expressInstance.get(`${this.expressBase}/*`, async (req, res) => {
+    expressInstance.get(`${this.expressBase}/*`, async (req: any, res: any) => {
       console.log(`🎉🎉🎉 GET ${req.url}`, res, typeof res,  Object.keys(res));
       const key = req.params[0];
       const filePath = path.resolve(this.options.fileSystemFolder, key);
@@ -316,7 +316,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
 
     // add HEAD endpoint for returning file metadata
-    expressInstance.head(`${this.expressBase}/*`, async (req, res) => {
+    expressInstance.head(`${this.expressBase}/*`, async (req: any, res: any) => {
       const key = req.params[0];
       const filePath = path.resolve(this.options.fileSystemFolder, key);
 
