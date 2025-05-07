@@ -104,7 +104,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       throw new Error(`Could not read metadata from db: ${e}`);
     });
     if (!metadata) {
-      throw new Error(`Metadata for key ${key} not found`);
+      console.error(`Metadata for key ${key} not found`);
+      return;
     }
     const metadataParsed = JSON.parse(metadata);
 
