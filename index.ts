@@ -99,6 +99,14 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
   async markKeyForDeletation(key: string): Promise<void> {
+    throw new Error("Method \"markKeyForDeletation\" is deprecated, use markKeyForDeletion instead");
+  }
+
+  async markKeyForNotDeletation(key: string): Promise<void> {
+    throw new Error("Method \"markKeyForNotDeletation\" is deprecated, use markKeyForNotDeletion instead");
+  }
+
+  async markKeyForDeletion(key: string): Promise<void> {
     const metadata = await this.metadataDb.get(key).catch((e) => {
       console.error(`Could not read metadata from db: ${e}`);
       throw new Error(`Could not read metadata from db: ${e}`);
@@ -130,7 +138,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
    * This method should work even if the file does not exist yet (e.g. only presigned URL was generated).
    * @param key - The key of the file to be uploaded e.g. "uploads/file.txt"
    */
-  async markKeyForNotDeletation(key: string): Promise<void> {
+  async markKeyForNotDeletion(key: string): Promise<void> {
     try {
       // if key exists, delete it
       await this.candidatesForDeletionDb.del(key);
