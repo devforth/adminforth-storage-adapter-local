@@ -99,11 +99,40 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
   async markKeyForDeletation(key: string): Promise<void> {
-    throw new Error("Method \"markKeyForDeletation\" is deprecated, use markKeyForDeletion instead");
+    console.error("Method \"markKeyForDeletation\" is deprecated, use markKeyForDeletion instead");
+    const metadata = await this.metadataDb.get(key).catch((e) => {
+      console.error(`Could not read metadata from db: ${e}`);
+      throw new Error(`Could not read metadata from db: ${e}`);
+    });
+    if (!metadata) {
+      console.error(`Metadata for key ${key} not found`);
+      return;
+    }
+    const metadataParsed = JSON.parse(metadata);
+
+    try {
+      await this.candidatesForDeletionDb.get(key);
+      // if key already exists, do nothing
+      return;
+    } catch (e) {
+      // if key does not exist, continue
+    }
+    try {
+      await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
+    } catch (e) {
+      console.error(`Could not write metadata to db: ${e}`);
+      throw new Error(`Could not write metadata to db: ${e}`);
+    }
   }
 
   async markKeyForNotDeletation(key: string): Promise<void> {
-    throw new Error("Method \"markKeyForNotDeletation\" is deprecated, use markKeyForNotDeletion instead");
+    console.error("Method \"markKeyForNotDeletation\" is deprecated, use markKeyForNotDeletion instead");
+    try {
+      // if key exists, delete it
+      await this.candidatesForDeletionDb.del(key);
+    } catch (e) {
+      // if key does not exist, do nothing
+    }
   }
 
   async markKeyForDeletion(key: string): Promise<void> {
