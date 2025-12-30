@@ -253,7 +253,6 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       const payload = {
         contentType: contentType,
       }
-      console.log(`👐👐👐 verify sign for ${key}|${expires}|${JSON.stringify(payload)}`)
 
       const expectedSignature = this.sign(
         `${this.expressBase}/${key}`, expires, payload);
@@ -304,10 +303,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       });
     });
 
-    console.log(`🎉🎉🎉 registring get endpoint for ${this.expressBase}/*`)
     // add express GET endpoint for downloading files
     expressInstance.get(`${this.expressBase}/*`, async (req: any, res: any) => {
-      console.log(`🎉🎉🎉 GET ${req.url}`, res, typeof res,  Object.keys(res));
       const key = req.params[0];
       const filePath = path.resolve(this.options.fileSystemFolder, key);
 
