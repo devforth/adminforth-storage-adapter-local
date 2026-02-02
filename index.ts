@@ -217,13 +217,13 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     if (!this.options.adminServeBaseUrl) {
       this.expressBase = `${slashedPrefix}uploaded-static/${userUniqueIntanceId}`
     } else {
-      if (AdminForthStorageAdapterLocalFilesystem.registredPrexises.includes(this.options.adminServeBaseUrl)) {
+      if (AdminForthStorageAdapterLocalFilesystem.registredPrexises.includes(this.options.adminServeBaseUrl) || AdminForthStorageAdapterLocalFilesystem.registredPrexises.includes(`/${this.options.adminServeBaseUrl}`)) {
         throw new Error(`adminServeBaseUrl ${this.options.adminServeBaseUrl} already registered, by another instance of local filesystem adapter. 
           Each adapter instahce should have unique adminServeBaseUrl by design.
         `);
       }
 
-      AdminForthStorageAdapterLocalFilesystem.registredPrexises.push(this.expressBase);
+      AdminForthStorageAdapterLocalFilesystem.registredPrexises.push(this.options.adminServeBaseUrl);
       this.expressBase = `${slashedPrefix}${this.options.adminServeBaseUrl}`;
 
     }
