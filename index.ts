@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import AdminForth, { StorageAdapter } from "adminforth";
+import AdminForth, { StorageAdapter, afLogger } from "adminforth";
 import crypto from "crypto";
 import { createWriteStream } from 'fs';
 import { Level } from 'level';
@@ -99,13 +99,13 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
   async markKeyForDeletation(key: string): Promise<void> {
-    console.error("Method \"markKeyForDeletation\" is deprecated, use markKeyForDeletion instead");
+    afLogger.error("Method \"markKeyForDeletation\" is deprecated, use markKeyForDeletion instead");
     const metadata = await this.metadataDb.get(key).catch((e) => {
-      console.error(`Could not read metadata from db: ${e}`);
+      afLogger.error(`Could not read metadata from db: ${e}`);
       throw new Error(`Could not read metadata from db: ${e}`);
     });
     if (!metadata) {
-      console.error(`Metadata for key ${key} not found`);
+      afLogger.error(`Metadata for key ${key} not found`);
       return;
     }
     const metadataParsed = JSON.parse(metadata);
@@ -120,13 +120,13 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     try {
       await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
     } catch (e) {
-      console.error(`Could not write metadata to db: ${e}`);
+      afLogger.error(`Could not write metadata to db: ${e}`);
       throw new Error(`Could not write metadata to db: ${e}`);
     }
   }
 
   async markKeyForNotDeletation(key: string): Promise<void> {
-    console.error("Method \"markKeyForNotDeletation\" is deprecated, use markKeyForNotDeletion instead");
+    afLogger.error("Method \"markKeyForNotDeletation\" is deprecated, use markKeyForNotDeletion instead");
     try {
       // if key exists, delete it
       await this.candidatesForDeletionDb.del(key);
@@ -137,11 +137,11 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
   async markKeyForDeletion(key: string): Promise<void> {
     const metadata = await this.metadataDb.get(key).catch((e) => {
-      console.error(`Could not read metadata from db: ${e}`);
+      afLogger.error(`Could not read metadata from db: ${e}`);
       throw new Error(`Could not read metadata from db: ${e}`);
     });
     if (!metadata) {
-      console.error(`Metadata for key ${key} not found`);
+      afLogger.error(`Metadata for key ${key} not found`);
       return;
     }
     const metadataParsed = JSON.parse(metadata);
@@ -156,7 +156,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     try {
       await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
     } catch (e) {
-      console.error(`Could not write metadata to db: ${e}`);
+      afLogger.error(`Could not write metadata to db: ${e}`);
       throw new Error(`Could not write metadata to db: ${e}`);
     }
   }
@@ -293,7 +293,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
             size: writeStream.bytesWritten,
           })
         ).catch((e) => {
-          console.error(`Could not write metadata to db: ${e}`);
+          afLogger.error(`Could not write metadata to db: ${e}`);
           throw new Error(`Could not write metadata to db: ${e}`);
         });
 
@@ -342,7 +342,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
         },
         (err) => {
           if (err) {
-            console.error(`Could not send file ${filePath}: ${err}`);
+            afLogger.error(`Could not send file ${filePath}: ${err}`);
             res.status(500).send("Could not send file");
           }
         }
@@ -393,7 +393,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       const keys = await this.candidatesForDeletionDb.keys().all();
       for (const key of keys) {
         const createdAt = await this.candidatesForDeletionDb.get(key).catch((e) => {
-          console.error(`Could not read metadata from db: ${e}`);
+          afLogger.error(`Could not read metadata from db: ${e}`);
           throw new Error(`Could not read metadata from db: ${e}`);
         });
         if (now - +createdAt > 24 * 60 * 60 * 1000) {
@@ -401,14 +401,14 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
           try {
             await fs.unlink(path.resolve(this.options.fileSystemFolder, key));
           } catch (e) {
-            console.error(`Could not delete file ${key}: ${e}`);
+            afLogger.error(`Could not delete file ${key}: ${e}`);
             throw new Error(`Could not delete file ${key}: ${e}`);
           }
           // delete metadata
           try {
             await this.metadataDb.del(key);
           } catch (e) {
-            console.error(`Could not delete metadata from db: ${e}`);
+            afLogger.error(`Could not delete metadata from db: ${e}`);
             throw new Error(`Could not delete metadata from db: ${e}`);
           }
         }
@@ -464,7 +464,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     const fileBuffer = await fs.readFile(filePath);
     const base64 = fileBuffer.toString("base64");
     const metadata = await this.metadataDb.get(key).catch((e) => {
-      console.error(`Could not read metadata from db: ${e}`);
+      afLogger.error(`Could not read metadata from db: ${e}`);
       throw new Error(`Could not read metadata from db: ${e}`);
     });
     if (!metadata) {
