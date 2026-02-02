@@ -297,7 +297,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
           throw new Error(`Could not write metadata to db: ${e}`);
         });
 
-        this.markKeyForDeletation(key);
+        this.markKeyForDeletion(key);
 
         res.status(200).send("File uploaded");
       });
