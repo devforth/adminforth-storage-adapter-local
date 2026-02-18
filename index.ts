@@ -99,40 +99,13 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
   async markKeyForDeletation(key: string): Promise<void> {
-    afLogger.error("Method \"markKeyForDeletation\" is deprecated, use markKeyForDeletion instead");
-    const metadata = await this.metadataDb.get(key).catch((e) => {
-      afLogger.error(`Could not read metadata from db: ${e}`);
-      throw new Error(`Could not read metadata from db: ${e}`);
-    });
-    if (!metadata) {
-      afLogger.error(`Metadata for key ${key} not found`);
-      return;
-    }
-    const metadataParsed = JSON.parse(metadata);
-
-    try {
-      await this.candidatesForDeletionDb.get(key);
-      // if key already exists, do nothing
-      return;
-    } catch (e) {
-      // if key does not exist, continue
-    }
-    try {
-      await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
-    } catch (e) {
-      afLogger.error(`Could not write metadata to db: ${e}`);
-      throw new Error(`Could not write metadata to db: ${e}`);
-    }
+    afLogger.warn("Method \"markKeyForDeletation\" is deprecated. Please update upload plugin");
+    this.markKeyForDeletion(key);
   }
 
   async markKeyForNotDeletation(key: string): Promise<void> {
-    afLogger.error("Method \"markKeyForNotDeletation\" is deprecated, use markKeyForNotDeletion instead");
-    try {
-      // if key exists, delete it
-      await this.candidatesForDeletionDb.del(key);
-    } catch (e) {
-      // if key does not exist, do nothing
-    }
+    afLogger.warn("Method \"markKeyForNotDeletation\" is deprecated. Please update upload plugin");
+    this.markKeyForNotDeletion(key);
   }
 
   async markKeyForDeletion(key: string): Promise<void> {
