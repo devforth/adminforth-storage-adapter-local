@@ -316,7 +316,10 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
         (err) => {
           if (err) {
             afLogger.error(`Could not send file ${filePath}: ${err}`);
-            res.status(500).send("Could not send file");
+
+            if (!res.headersSent) {
+              res.status(500).send("Could not send file");
+            }
           }
         }
       );
