@@ -6,8 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc && npm version patch",
-    "rollout": "npm run build && npm publish --access public",
-    "prepare": "npm link adminforth"
+    "rollout": "npm run build && npm publish --access public"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +24,6 @@
     "typescript": "^5.8.2"
   },
   "peerDependencies": {
-    "adminforth": "next"
+    "adminforth": "^2.24.0"
   }
 }
