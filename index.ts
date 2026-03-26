@@ -416,6 +416,26 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   }
 
   /**
+   * Checks if the URL belongs to this local filesystem storage instance.
+   * It checks if the URL starts with the base path registered in Express.
+   * * @param url - The URL to check
+   */
+  async isInternalUrl(url: string): Promise<boolean> {
+    if (url.startsWith(this.expressBase)) {
+      return true;
+    }
+
+    try {
+      const normalizedUrl = url.startsWith('//') ? `https:${url}` : url;
+      const parsedUrl = new URL(normalizedUrl, 'http://localhost'); 
+      
+      return parsedUrl.pathname.startsWith(this.expressBase);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
    * This method should return the key as a data URL (base64 encoded string).
    * @param key - The key of the file to be converted to a data URL
    * @returns A promise that resolves to a string containing the data URL
