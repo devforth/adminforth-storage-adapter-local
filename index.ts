@@ -421,6 +421,11 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
    * * @param url - The URL to check
    */
   async isInternalUrl(url: string): Promise<boolean> {
+
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      return true;
+    }
+
     if (url.startsWith(this.expressBase)) {
       return true;
     }
@@ -430,7 +435,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       const parsedUrl = new URL(normalizedUrl, 'http://localhost'); 
       
       return parsedUrl.pathname.startsWith(this.expressBase);
-    } catch (e) {
+    } catch {
       return false;
     }
   }
