@@ -204,7 +204,9 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
     // add express PUT endpoint for uploading files
     expressInstance.put(`${this.expressBase}/*`, async (req: any, res: any) => {
-      const key = req.params[0];
+      const fullUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+      const ulr = new URL(fullUrl);
+      const key = ulr.pathname.replace(this.expressBase, '').replace(/^\/+/, ''); // remove base and leading slashes
 
       // get content type from headers
       const contentType = req.headers["content-type"] as string;
