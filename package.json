@@ -9,7 +9,7 @@
     "rollout": "npm run build && npm publish --access public"
   },
   "keywords": [],
-  "author": "",
+  "author": "DevForth (https://devforth.io)",
   "license": "MIT",
   "description": "",
   "repository": {
