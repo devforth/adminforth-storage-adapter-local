@@ -1,17 +1,23 @@
 {
   "name": "@adminforth/storage-adapter-local",
-  "version": "1.0.15",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
+   "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc && npm version patch",
-    "rollout": "npm run build && npm publish --access public"
+    "build": "tsc"
   },
   "keywords": [],
   "author": "DevForth (https://devforth.io)",
   "license": "MIT",
   "description": "",
+  "devDependencies": {
+    "semantic-release": "^24.2.1",
+    "semantic-release-slack-bot": "^4.0.2"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/devforth/adminforth-storage-adapter-local.git"
@@ -25,5 +31,30 @@
   },
   "peerDependencies": {
     "adminforth": "^2.24.0"
+  },
+  "release": {
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/npm",
+      "@semantic-release/github",
+      [
+        "semantic-release-slack-bot",
+        {
+          "packageName": "@adminforth/storage-adapter-local",
+          "notifyOnSuccess": true,
+          "notifyOnFail": true,
+          "slackIcon": ":package:",
+          "markdownReleaseNotes": true
+        }
+      ]
+    ],
+    "branches": [
+      "main",
+      {
+        "name": "next",
+        "prerelease": true
+      }
+    ]
   }
 }
