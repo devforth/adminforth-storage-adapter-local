@@ -54,6 +54,74 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     return hmac.digest("hex");
   }
 
+  signaturesMatch(signature: string, expectedSignature: string): boolean {
+    const signatureBuffer = Buffer.from(signature, "hex");
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, "hex");
+
+    return signatureBuffer.length === expectedSignatureBuffer.length
+      && crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer);
+  }
+
+  verifyPresignedAccess(key: string, query: Record<string, any> | URLSearchParams): { ok: true } | { ok: false; message: string } {
+    if (this.options.mode === "public") {
+      return { ok: true };
+    }
+
+    const getQueryValue = (name: string) => {
+      const value = query instanceof URLSearchParams ? query.get(name) : query[name];
+      return Array.isArray(value) ? value[0] : value;
+    };
+
+    const expiresValue = getQueryValue("expires");
+    const signature = getQueryValue("signature");
+    if (typeof expiresValue !== "string" || !/^\d+$/.test(expiresValue) || typeof signature !== "string") {
+      return { ok: false, message: "Missing signature" };
+    }
+
+    const expires = parseInt(expiresValue, 10);
+    if (Date.now() / 1000 > expires) {
+      return { ok: false, message: "Signature expired" };
+    }
+
+    const urlPath = `${this.expressBase}/${key}`;
+    const expectedSignature = this.sign(urlPath, expires);
+    const legacyExpectedSignature = this.sign(key, expires);
+    if (
+      !this.signaturesMatch(signature, expectedSignature)
+      && !this.signaturesMatch(signature, legacyExpectedSignature)
+    ) {
+      return { ok: false, message: "Invalid signature" };
+    }
+
+    return { ok: true };
+  }
+
+  parseKeyWithQuery(keyOrUrl: string): { key: string; query: URLSearchParams } {
+    const queryStart = keyOrUrl.indexOf("?");
+    const rawPath = queryStart === -1 ? keyOrUrl : keyOrUrl.slice(0, queryStart);
+    const query = new URLSearchParams(queryStart === -1 ? "" : keyOrUrl.slice(queryStart + 1));
+    let key = rawPath;
+
+    try {
+      const normalizedUrl = keyOrUrl.startsWith("//") ? `https:${keyOrUrl}` : keyOrUrl;
+      const parsedUrl = new URL(normalizedUrl, "http://localhost");
+      if (keyOrUrl.startsWith("/") || /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(keyOrUrl) || keyOrUrl.startsWith("//")) {
+        key = parsedUrl.pathname;
+      }
+    } catch {
+      // Keep raw path when input is a plain storage key.
+    }
+
+    if (key.startsWith(this.expressBase)) {
+      key = key.slice(this.expressBase.length);
+    }
+
+    return {
+      key: key.replace(/^\/+/, ""),
+      query,
+    };
+  }
+
 
   /**
    * This method should return the presigned URL for the given key capable of upload (adapter user will call PUT multipart form data to this URL within expiresIn seconds after link generation).
@@ -94,7 +162,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     if (this.options.mode === "public") {
       return urlPath;
     } else {
-      return this.presignUrl(key, _expiresIn);
+      return this.presignUrl(urlPath, _expiresIn);
     }
   }
 
@@ -283,6 +351,11 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       const key = req.params[0];
       const filePath = path.resolve(this.options.fileSystemFolder, key);
 
+      const presignedAccess = this.verifyPresignedAccess(key, req.query);
+      if (presignedAccess.ok === false) {
+        return res.status(403).send(presignedAccess.message);
+      }
+
       // Ensure filePath is within fileSystemFolder
       const basePath = path.resolve(this.options.fileSystemFolder);
       if (!filePath.startsWith(basePath + path.sep)) {
@@ -336,6 +409,11 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       const key = req.params[0];
       const filePath = path.resolve(this.options.fileSystemFolder, key);
 
+      const presignedAccess = this.verifyPresignedAccess(key, req.query);
+      if (presignedAccess.ok === false) {
+        return res.status(403).send(presignedAccess.message);
+      }
+
       // Ensure filePath is within fileSystemFolder
       const basePath = path.resolve(this.options.fileSystemFolder);
       if (!filePath.startsWith(basePath + path.sep)) {
@@ -361,6 +439,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       res.setHeader("Content-Length", metadataParsed.size);
       res.setHeader("Last-Modified", new Date(metadataParsed.createdAt).toUTCString());
       res.setHeader("ETag", crypto.createHash("md5").update(metadata).digest("hex"));
+      res.status(200).end();
     });
     this.putLastListenerToTheBeginningOfTheStack(expressInstance);
 
@@ -448,6 +527,14 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
    * @returns A promise that resolves to a string containing the data URL
    */
    async getKeyAsDataURL(key: string): Promise<string> {
+    const parsed = this.parseKeyWithQuery(key);
+    key = parsed.key;
+
+    const presignedAccess = this.verifyPresignedAccess(key, parsed.query);
+    if (presignedAccess.ok === false) {
+      throw new Error(presignedAccess.message);
+    }
+
     const filePath = path.resolve(this.options.fileSystemFolder, key);
 
     // Ensure filePath is within fileSystemFolder
