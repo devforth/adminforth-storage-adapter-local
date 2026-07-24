@@ -13,7 +13,7 @@
   "keywords": [],
   "author": "DevForth (https://devforth.io)",
   "license": "MIT",
-  "description": "",
+  "description": "AdminForth storage adapter for the local filesystem.",
   "devDependencies": {
     "adminforth": "^3.0.1",
     "semantic-release": "^24.2.1",
