@@ -23,6 +23,7 @@
     "type": "git",
     "url": "https://github.com/devforth/adminforth-storage-adapter-local.git"
   },
+  "homepage": "https://adminforth.dev/docs/tutorial/Adapters/storage-adapters/#local-storage-adapter",
   "dependencies": {
     "@types/express": "^4.17.21",
     "@types/level": "^6.0.3",
