@@ -271,7 +271,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     
 
     // add express PUT endpoint for uploading files
-    expressInstance.put(`${this.expressBase}/*`, async (req: any, res: any) => {
+    expressInstance.put(`${this.expressBase}/*splat`, async (req: any, res: any) => {
       const fullUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
       const ulr = new URL(fullUrl);
       const key = ulr.pathname.replace(this.expressBase, '').replace(/^\/+/, ''); // remove base and leading slashes
@@ -347,8 +347,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     });
 
     // add express GET endpoint for downloading files
-    expressInstance.get(`${this.expressBase}/*`, async (req: any, res: any) => {
-      const key = req.params[0];
+    expressInstance.get(`${this.expressBase}/*splat`, async (req: any, res: any) => {
+      const key = [].concat(req.params.splat ?? []).join('/'); // express5 named wildcard: req.params.splat is an array of path segments
       const filePath = path.resolve(this.options.fileSystemFolder, key);
 
       const presignedAccess = this.verifyPresignedAccess(key, req.query);
@@ -405,8 +405,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
 
     // add HEAD endpoint for returning file metadata
-    expressInstance.head(`${this.expressBase}/*`, async (req: any, res: any) => {
-      const key = req.params[0];
+    expressInstance.head(`${this.expressBase}/*splat`, async (req: any, res: any) => {
+      const key = [].concat(req.params.splat ?? []).join('/'); // express5 named wildcard: req.params.splat is an array of path segments
       const filePath = path.resolve(this.options.fileSystemFolder, key);
 
       const presignedAccess = this.verifyPresignedAccess(key, req.query);
@@ -481,11 +481,12 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
   putLastListenerToTheBeginningOfTheStack(expressInstance) {
     // since adminforth might already registred /* endpoint we need to reorder the routes
-    const stack = expressInstance._router.stack;
+    // Express 5 removed app._router; the router is exposed as app.router (Express 4 keeps _router).
+    const stack = (expressInstance._router ?? expressInstance.router).stack;
     const adpaterListnerLayer = stack.pop(); // route is last, just pop it
-    // find route with ${this.adminforthSlashedPrefix}assets/*
+    // find route with ${this.adminforthSlashedPrefix}assets/*splat
     const wildcardIndex = stack.findIndex((layer) => {
-      return layer.route && layer.route.path === `${this.adminforthSlashedPrefix}assets/*`;
+      return layer.route && layer.route.path === `${this.adminforthSlashedPrefix}assets/*splat`;
     });
     if (wildcardIndex === -1) {
       // if not found, just push it to the end, e.g. if discover databse and this method executed before 
@@ -563,6 +564,16 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     const metadataParsed = JSON.parse(metadata);
     const dataUrl = `data:${metadataParsed.contentType};base64,${base64}`;
     return dataUrl;
+  }
+
+  /**
+   * Creates an object writer for the specified key and content type.
+   * For example, this can be used to write large files in chunks or streams (AWS S3 Multipart Upload).
+   * @param key - The key of the file to be written e.g. "uploads/file.txt"
+   * @param contentType - The MIME type of the file to be written e.g. "image/png"
+   */
+  async createWriteStream(key: string, contentType: string): Promise<any> {
+    throw new Error("method is not implemented yet");
   }
 
 }

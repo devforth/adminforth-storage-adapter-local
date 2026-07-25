@@ -15,7 +15,7 @@
   "license": "MIT",
   "description": "AdminForth storage adapter for the local filesystem.",
   "devDependencies": {
-    "adminforth": "^3.0.1",
+    "adminforth": "^3.12.0",
     "semantic-release": "^24.2.1",
     "semantic-release-slack-bot": "^4.0.2"
   },
@@ -32,7 +32,7 @@
     "typescript": "^5.8.2"
   },
   "peerDependencies": {
-    "adminforth": "^3.0.1"
+    "adminforth": "^3.12.0"
   },
   "release": {
     "plugins": [
