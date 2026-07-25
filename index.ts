@@ -250,6 +250,9 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
     this.candidatesForDeletionDb = new Level(path.join(this.options.fileSystemFolder, userUniqueIntanceId, 'candidatesForDeletion'));
 
+    // Adminforth can use express 4 and express 5, but this adapter is compatible only with express 4
+    // Need to handle it later
+    //@ts-ignore
     const expressInstance: Express = global.adminforth.express.expressApp;
     const prefix = global.adminforth.config.baseUrl || '/';
 
