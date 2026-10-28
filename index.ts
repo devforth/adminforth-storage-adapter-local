@@ -138,12 +138,14 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   async getUploadSignedUrl(
     key: string,
     contentType: string,
-    expiresIn = 3600
+    expiresIn = 3600,
+    contentLength?: number
   ): Promise<{ uploadUrl: string; uploadExtraParams: Record<string, string> }> {
     const urlPath = `${this.expressBase}/${key}`;
+    const payload = contentLength == null ? { contentType } : { contentType, contentLength: String(contentLength) };
 
     return {
-      uploadUrl: this.presignUrl(urlPath, expiresIn, { contentType }),
+      uploadUrl: this.presignUrl(urlPath, expiresIn, payload),
       uploadExtraParams: {}
     }
   }
@@ -297,9 +299,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       //verify presigned URL
       const expires = parseInt(req.query.expires as string);
       const signature = req.query.signature as string;
-      const payload = {
-        contentType: contentType,
-      }
+      const signedContentLength = req.query.contentLength as string | undefined;
+      const payload = signedContentLength === undefined ? { contentType } : { contentType, contentLength: signedContentLength };
 
       const expectedSignature = this.sign(
         `${this.expressBase}/${key}`, expires, payload);
@@ -312,6 +313,10 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       // check if content type is valid
       if (contentType !== req.headers["content-type"]) {
         return res.status(400).send("Invalid content type");
+      }
+      // node reads exactly Content-Length bytes of the body, so checking the header is enough
+      if (signedContentLength !== undefined && req.headers["content-length"] !== signedContentLength) {
+        return res.status(400).send("Invalid content length");
       }
 
       // check if file already exists
