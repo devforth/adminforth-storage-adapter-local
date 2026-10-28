@@ -185,17 +185,18 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       afLogger.error(`Metadata for key ${key} not found`);
       return;
     }
-    const metadataParsed = JSON.parse(metadata);
-
-    try {
-      await this.candidatesForDeletionDb.get(key);
-      // if key already exists, do nothing
+    // marking never worked before cleanupEnabled was added (level returns undefined for missing keys
+    // instead of throwing), so files uploaded earlier are kept, as they always were
+    if (!JSON.parse(metadata).cleanupEnabled) {
       return;
-    } catch (e) {
-      // if key does not exist, continue
+    }
+
+    if (await this.candidatesForDeletionDb.get(key) !== undefined) {
+      return;
     }
     try {
-      await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
+      // the grace period is counted from the moment of marking, not from the upload
+      await this.candidatesForDeletionDb.put(key, String(Date.now()))
     } catch (e) {
       afLogger.error(`Could not write metadata to db: ${e}`);
       throw new Error(`Could not write metadata to db: ${e}`);
@@ -330,20 +331,28 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       // write file to disk
       const writeStream = createWriteStream(filePath);
       req.pipe(writeStream);
-      writeStream.on("finish", () => {
-        // write metadata to db
-        this.metadataDb.put(key, 
-          JSON.stringify({
-            contentType: contentType,
-            createdAt: +Date.now(),
-            size: writeStream.bytesWritten,
-          })
-        ).catch((e) => {
+      writeStream.on("finish", async () => {
+        // write metadata to db, it has to be there before marking the file for deletion
+        try {
+          await this.metadataDb.put(key,
+            JSON.stringify({
+              contentType: contentType,
+              createdAt: +Date.now(),
+              size: writeStream.bytesWritten,
+              cleanupEnabled: true,
+            })
+          );
+        } catch (e) {
           afLogger.error(`Could not write metadata to db: ${e}`);
-          throw new Error(`Could not write metadata to db: ${e}`);
-        });
+          return res.status(500).send("Could not write metadata");
+        }
 
-        this.markKeyForDeletion(key);
+        try {
+          await this.markKeyForDeletion(key);
+        } catch (e) {
+          // the file is stored anyway, without the mark it is just not cleaned up if the record is not saved
+          afLogger.error(`Could not mark ${key} for deletion: ${e}`);
+        }
 
         res.status(200).send("File uploaded");
       });
@@ -447,35 +456,41 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     this.putLastListenerToTheBeginningOfTheStack(expressInstance);
 
 
-    // run scheduler every 10 minutes to delete files marked for deletion
-    setInterval(async () => {
-      const now = +Date.now();
-      const keys = await this.candidatesForDeletionDb.keys().all();
-      for (const key of keys) {
-        const createdAt = await this.candidatesForDeletionDb.get(key).catch((e) => {
-          afLogger.error(`Could not read metadata from db: ${e}`);
-          throw new Error(`Could not read metadata from db: ${e}`);
-        });
-        if (now - +createdAt > 24 * 60 * 60 * 1000) {
-          // delete file
-          try {
-            await fs.unlink(path.resolve(this.options.fileSystemFolder, key));
-          } catch (e) {
-            afLogger.error(`Could not delete file ${key}: ${e}`);
-            throw new Error(`Could not delete file ${key}: ${e}`);
-          }
-          // delete metadata
-          try {
-            await this.metadataDb.del(key);
-          } catch (e) {
-            afLogger.error(`Could not delete metadata from db: ${e}`);
-            throw new Error(`Could not delete metadata from db: ${e}`);
-          }
+    // run scheduler every 10 minutes to delete files marked for deletion;
+    // an error thrown from setInterval would crash the process, so it is only logged
+    setInterval(() => {
+      this.deleteExpiredCandidates().catch((e) => {
+        afLogger.error(`Could not clean up marked files: ${e}`);
+      });
+    }, 10 * 60 * 1000);
+
+  }
+
+  async deleteExpiredCandidates(): Promise<void> {
+    const now = +Date.now();
+    const keys = await this.candidatesForDeletionDb.keys().all();
+    for (const key of keys) {
+      const markedAt = await this.candidatesForDeletionDb.get(key);
+      if (now - +markedAt <= 24 * 60 * 60 * 1000) {
+        continue;
+      }
+      // every key is handled on its own, so one broken file doesn't stop the others
+      try {
+        await fs.unlink(path.resolve(this.options.fileSystemFolder, key));
+      } catch (e) {
+        // the file could be removed by hand, then only its records are left to drop
+        if (e.code !== "ENOENT") {
+          afLogger.error(`Could not delete file ${key}: ${e}`);
+          continue;
         }
       }
+      try {
+        await this.metadataDb.del(key);
+        await this.candidatesForDeletionDb.del(key);
+      } catch (e) {
+        afLogger.error(`Could not delete records of ${key} from db: ${e}`);
+      }
     }
-      , 10 * 60 * 1000); // every 10 minutes
-
   }
 
   async objectCanBeAccesedPublicly(): Promise<boolean> {
