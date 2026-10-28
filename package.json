@@ -8,7 +8,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "DevForth (https://devforth.io)",
@@ -17,7 +18,9 @@
   "devDependencies": {
     "adminforth": "^4.7.3",
     "semantic-release": "^24.2.1",
-    "semantic-release-slack-bot": "^4.0.2"
+    "semantic-release-slack-bot": "^4.0.2",
+    "express5": "npm:express@^5.1.0",
+    "vitest": "^3.2.4"
   },
   "repository": {
     "type": "git",

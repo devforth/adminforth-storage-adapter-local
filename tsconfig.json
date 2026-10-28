@@ -9,5 +9,5 @@
     "strict": false,                                     /* Enable all strict type-checking options. */
     "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
   },
-  "exclude": ["node_modules", "dist", "custom"],           /* Exclude files from compilation. */
+  "exclude": ["node_modules", "dist", "custom", "tests"],           /* Exclude files from compilation. */
 }
