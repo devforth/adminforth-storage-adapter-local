@@ -138,12 +138,14 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
   async getUploadSignedUrl(
     key: string,
     contentType: string,
-    expiresIn = 3600
+    expiresIn = 3600,
+    contentLength?: number
   ): Promise<{ uploadUrl: string; uploadExtraParams: Record<string, string> }> {
     const urlPath = `${this.expressBase}/${key}`;
+    const payload = contentLength == null ? { contentType } : { contentType, contentLength: String(contentLength) };
 
     return {
-      uploadUrl: this.presignUrl(urlPath, expiresIn, { contentType }),
+      uploadUrl: this.presignUrl(urlPath, expiresIn, payload),
       uploadExtraParams: {}
     }
   }
@@ -185,17 +187,18 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       afLogger.error(`Metadata for key ${key} not found`);
       return;
     }
-    const metadataParsed = JSON.parse(metadata);
-
-    try {
-      await this.candidatesForDeletionDb.get(key);
-      // if key already exists, do nothing
+    // marking never worked before cleanupEnabled was added (level returns undefined for missing keys
+    // instead of throwing), so files uploaded earlier are kept, as they always were
+    if (!JSON.parse(metadata).cleanupEnabled) {
       return;
-    } catch (e) {
-      // if key does not exist, continue
+    }
+
+    if (await this.candidatesForDeletionDb.get(key) !== undefined) {
+      return;
     }
     try {
-      await this.candidatesForDeletionDb.put(key, metadataParsed.createdAt)
+      // the grace period is counted from the moment of marking, not from the upload
+      await this.candidatesForDeletionDb.put(key, String(Date.now()))
     } catch (e) {
       afLogger.error(`Could not write metadata to db: ${e}`);
       throw new Error(`Could not write metadata to db: ${e}`);
@@ -296,9 +299,8 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       //verify presigned URL
       const expires = parseInt(req.query.expires as string);
       const signature = req.query.signature as string;
-      const payload = {
-        contentType: contentType,
-      }
+      const signedContentLength = req.query.contentLength as string | undefined;
+      const payload = signedContentLength === undefined ? { contentType } : { contentType, contentLength: signedContentLength };
 
       const expectedSignature = this.sign(
         `${this.expressBase}/${key}`, expires, payload);
@@ -311,6 +313,10 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       // check if content type is valid
       if (contentType !== req.headers["content-type"]) {
         return res.status(400).send("Invalid content type");
+      }
+      // node reads exactly Content-Length bytes of the body, so checking the header is enough
+      if (signedContentLength !== undefined && req.headers["content-length"] !== signedContentLength) {
+        return res.status(400).send("Invalid content length");
       }
 
       // check if file already exists
@@ -330,20 +336,28 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       // write file to disk
       const writeStream = createWriteStream(filePath);
       req.pipe(writeStream);
-      writeStream.on("finish", () => {
-        // write metadata to db
-        this.metadataDb.put(key, 
-          JSON.stringify({
-            contentType: contentType,
-            createdAt: +Date.now(),
-            size: writeStream.bytesWritten,
-          })
-        ).catch((e) => {
+      writeStream.on("finish", async () => {
+        // write metadata to db, it has to be there before marking the file for deletion
+        try {
+          await this.metadataDb.put(key,
+            JSON.stringify({
+              contentType: contentType,
+              createdAt: +Date.now(),
+              size: writeStream.bytesWritten,
+              cleanupEnabled: true,
+            })
+          );
+        } catch (e) {
           afLogger.error(`Could not write metadata to db: ${e}`);
-          throw new Error(`Could not write metadata to db: ${e}`);
-        });
+          return res.status(500).send("Could not write metadata");
+        }
 
-        this.markKeyForDeletion(key);
+        try {
+          await this.markKeyForDeletion(key);
+        } catch (e) {
+          // the file is stored anyway, without the mark it is just not cleaned up if the record is not saved
+          afLogger.error(`Could not mark ${key} for deletion: ${e}`);
+        }
 
         res.status(200).send("File uploaded");
       });
@@ -386,6 +400,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
         {
           headers: {
             "Content-Type": metadataParsed.contentType,
+            "X-Content-Type-Options": "nosniff",
             "Content-Length": metadataParsed.size,
             "Last-Modified": new Date(metadataParsed.createdAt).toUTCString(),
             "ETag": crypto.createHash("md5").update(metadata).digest("hex"),
@@ -439,6 +454,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       }
       const metadataParsed = JSON.parse(metadata);
       res.setHeader("Content-Type", metadataParsed.contentType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Length", metadataParsed.size);
       res.setHeader("Last-Modified", new Date(metadataParsed.createdAt).toUTCString());
       res.setHeader("ETag", crypto.createHash("md5").update(metadata).digest("hex"));
@@ -447,35 +463,41 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
     this.putLastListenerToTheBeginningOfTheStack(expressInstance);
 
 
-    // run scheduler every 10 minutes to delete files marked for deletion
-    setInterval(async () => {
-      const now = +Date.now();
-      const keys = await this.candidatesForDeletionDb.keys().all();
-      for (const key of keys) {
-        const createdAt = await this.candidatesForDeletionDb.get(key).catch((e) => {
-          afLogger.error(`Could not read metadata from db: ${e}`);
-          throw new Error(`Could not read metadata from db: ${e}`);
-        });
-        if (now - +createdAt > 24 * 60 * 60 * 1000) {
-          // delete file
-          try {
-            await fs.unlink(path.resolve(this.options.fileSystemFolder, key));
-          } catch (e) {
-            afLogger.error(`Could not delete file ${key}: ${e}`);
-            throw new Error(`Could not delete file ${key}: ${e}`);
-          }
-          // delete metadata
-          try {
-            await this.metadataDb.del(key);
-          } catch (e) {
-            afLogger.error(`Could not delete metadata from db: ${e}`);
-            throw new Error(`Could not delete metadata from db: ${e}`);
-          }
+    // run scheduler every 10 minutes to delete files marked for deletion;
+    // an error thrown from setInterval would crash the process, so it is only logged
+    setInterval(() => {
+      this.deleteExpiredCandidates().catch((e) => {
+        afLogger.error(`Could not clean up marked files: ${e}`);
+      });
+    }, 10 * 60 * 1000);
+
+  }
+
+  async deleteExpiredCandidates(): Promise<void> {
+    const now = +Date.now();
+    const keys = await this.candidatesForDeletionDb.keys().all();
+    for (const key of keys) {
+      const markedAt = await this.candidatesForDeletionDb.get(key);
+      if (now - +markedAt <= 24 * 60 * 60 * 1000) {
+        continue;
+      }
+      // every key is handled on its own, so one broken file doesn't stop the others
+      try {
+        await fs.unlink(path.resolve(this.options.fileSystemFolder, key));
+      } catch (e) {
+        // the file could be removed by hand, then only its records are left to drop
+        if (e.code !== "ENOENT") {
+          afLogger.error(`Could not delete file ${key}: ${e}`);
+          continue;
         }
       }
+      try {
+        await this.metadataDb.del(key);
+        await this.candidatesForDeletionDb.del(key);
+      } catch (e) {
+        afLogger.error(`Could not delete records of ${key} from db: ${e}`);
+      }
     }
-      , 10 * 60 * 1000); // every 10 minutes
-
   }
 
   async objectCanBeAccesedPublicly(): Promise<boolean> {
