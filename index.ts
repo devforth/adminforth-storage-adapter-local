@@ -400,6 +400,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
         {
           headers: {
             "Content-Type": metadataParsed.contentType,
+            "X-Content-Type-Options": "nosniff",
             "Content-Length": metadataParsed.size,
             "Last-Modified": new Date(metadataParsed.createdAt).toUTCString(),
             "ETag": crypto.createHash("md5").update(metadata).digest("hex"),
@@ -453,6 +454,7 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
       }
       const metadataParsed = JSON.parse(metadata);
       res.setHeader("Content-Type", metadataParsed.contentType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Length", metadataParsed.size);
       res.setHeader("Last-Modified", new Date(metadataParsed.createdAt).toUTCString());
       res.setHeader("ETag", crypto.createHash("md5").update(metadata).digest("hex"));
