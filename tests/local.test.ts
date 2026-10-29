@@ -108,6 +108,23 @@ describe('serving files', () => {
   });
 });
 
+describe('getKeyAsDataURL', () => {
+  it('reads a plain key of a private storage and checks the signature of a URL', async () => {
+    const key = newKey();
+    await upload(key, PNG.length);
+    const dataUrl = `data:image/png;base64,${PNG.toString('base64')}`;
+    adapter.options.mode = 'private';
+    try {
+      const signedUrl = await adapter.getDownloadUrl(key);
+      expect(await adapter.getKeyAsDataURL(key)).toBe(dataUrl);
+      expect(await adapter.getKeyAsDataURL(signedUrl)).toBe(dataUrl);
+      await expect(adapter.getKeyAsDataURL(signedUrl.split('?')[0])).rejects.toThrow('Missing signature');
+    } finally {
+      adapter.options.mode = 'public';
+    }
+  });
+});
+
 describe('cleanup marks', () => {
   it('marks a new upload and unmarks it when it is saved', async () => {
     const key = newKey();

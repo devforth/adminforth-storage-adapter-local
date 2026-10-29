@@ -549,16 +549,21 @@ export default class AdminForthStorageAdapterLocalFilesystem implements StorageA
 
   /**
    * This method should return the key as a data URL (base64 encoded string).
+   * A plain storage key is a trusted server-side read, like in the S3 adapters;
+   * a download URL must carry a valid signature.
    * @param key - The key of the file to be converted to a data URL
    * @returns A promise that resolves to a string containing the data URL
    */
    async getKeyAsDataURL(key: string): Promise<string> {
     const parsed = this.parseKeyWithQuery(key);
+    const isPlainKey = parsed.key === key;
     key = parsed.key;
 
-    const presignedAccess = this.verifyPresignedAccess(key, parsed.query);
-    if (presignedAccess.ok === false) {
-      throw new Error(presignedAccess.message);
+    if (!isPlainKey) {
+      const presignedAccess = this.verifyPresignedAccess(key, parsed.query);
+      if (presignedAccess.ok === false) {
+        throw new Error(presignedAccess.message);
+      }
     }
 
     const filePath = path.resolve(this.options.fileSystemFolder, key);
